@@ -284,3 +284,201 @@ Clarinet.test({
     assertEquals(info['paused'], types.bool(true));
   }
 });
+
+Clarinet.test({
+  name: "Test enhanced pool statistics and analytics",
+  async fn(chain: Chain, accounts: Map<string, Account>) {
+    const deployer = accounts.get('deployer')!;
+    const user1 = accounts.get('wallet_1')!;
+
+    // Setup: mint tokens and create pool
+    let block = chain.mineBlock([
+      Tx.contractCall('mock-token-a', 'mint', [
+        types.uint(1000000000),
+        types.principal(user1.address)
+      ], deployer.address),
+      Tx.contractCall('mock-token-b', 'mint', [
+        types.uint(2000000000),
+        types.principal(user1.address)
+      ], deployer.address)
+    ]);
+
+    // Create pool
+    block = chain.mineBlock([
+      Tx.contractCall('cross-chain-liquidity-aggregator', 'create-pool', [
+        types.principal(deployer.address + '.mock-token-a'),
+        types.principal(deployer.address + '.mock-token-b'),
+        types.uint(500000000), // 500 tokens A
+        types.uint(1000000000), // 1000 tokens B
+        types.uint(300)
+      ], user1.address)
+    ]);
+
+    // Test pool statistics
+    let poolStats = chain.callReadOnlyFn(
+      'cross-chain-liquidity-aggregator',
+      'get-pool-stats',
+      [types.uint(1)],
+      user1.address
+    );
+
+    poolStats.result.expectOk();
+    const stats = poolStats.result.expectOk().expectTuple();
+    assertEquals(stats['reserve-a'], types.uint(500000000));
+    assertEquals(stats['reserve-b'], types.uint(1000000000));
+
+    // Test pool health
+    let poolHealth = chain.callReadOnlyFn(
+      'cross-chain-liquidity-aggregator',
+      'get-pool-health',
+      [types.uint(1)],
+      user1.address
+    );
+
+    poolHealth.result.expectOk();
+    const health = poolHealth.result.expectOk().expectTuple();
+    assertEquals(health['is-balanced'], types.bool(true));
+    assertEquals(health['min-liquidity-met'], types.bool(true));
+
+    // Test comprehensive analytics
+    let analytics = chain.callReadOnlyFn(
+      'cross-chain-liquidity-aggregator',
+      'get-pool-analytics',
+      [types.uint(1)],
+      user1.address
+    );
+
+    analytics.result.expectOk();
+  }
+});
+
+Clarinet.test({
+  name: "Test price impact calculation",
+  async fn(chain: Chain, accounts: Map<string, Account>) {
+    const deployer = accounts.get('deployer')!;
+    const user1 = accounts.get('wallet_1')!;
+
+    // Setup: mint tokens and create pool
+    let block = chain.mineBlock([
+      Tx.contractCall('mock-token-a', 'mint', [
+        types.uint(1000000000),
+        types.principal(user1.address)
+      ], deployer.address),
+      Tx.contractCall('mock-token-b', 'mint', [
+        types.uint(2000000000),
+        types.principal(user1.address)
+      ], deployer.address)
+    ]);
+
+    // Create pool
+    block = chain.mineBlock([
+      Tx.contractCall('cross-chain-liquidity-aggregator', 'create-pool', [
+        types.principal(deployer.address + '.mock-token-a'),
+        types.principal(deployer.address + '.mock-token-b'),
+        types.uint(1000000000), // 1000 tokens A
+        types.uint(2000000000), // 2000 tokens B
+        types.uint(300)
+      ], user1.address)
+    ]);
+
+    // Test price impact for small swap (should be low)
+    let smallSwapImpact = chain.callReadOnlyFn(
+      'cross-chain-liquidity-aggregator',
+      'calculate-price-impact',
+      [
+        types.uint(1),
+        types.principal(deployer.address + '.mock-token-a'),
+        types.uint(10000000) // 10 tokens (1% of pool)
+      ],
+      user1.address
+    );
+
+    smallSwapImpact.result.expectOk();
+
+    // Test price impact for large swap (should be higher)
+    let largeSwapImpact = chain.callReadOnlyFn(
+      'cross-chain-liquidity-aggregator',
+      'calculate-price-impact',
+      [
+        types.uint(1),
+        types.principal(deployer.address + '.mock-token-a'),
+        types.uint(100000000) // 100 tokens (10% of pool)
+      ],
+      user1.address
+    );
+
+    largeSwapImpact.result.expectOk();
+  }
+});
+
+Clarinet.test({
+  name: "Test fee tracking functionality",
+  async fn(chain: Chain, accounts: Map<string, Account>) {
+    const deployer = accounts.get('deployer')!;
+    const user1 = accounts.get('wallet_1')!;
+    const user2 = accounts.get('wallet_2')!;
+
+    // Setup: mint tokens and create pool
+    let block = chain.mineBlock([
+      Tx.contractCall('mock-token-a', 'mint', [
+        types.uint(1000000000),
+        types.principal(user1.address)
+      ], deployer.address),
+      Tx.contractCall('mock-token-b', 'mint', [
+        types.uint(2000000000),
+        types.principal(user1.address)
+      ], deployer.address),
+      Tx.contractCall('mock-token-a', 'mint', [
+        types.uint(100000000),
+        types.principal(user2.address)
+      ], deployer.address)
+    ]);
+
+    // Create pool
+    block = chain.mineBlock([
+      Tx.contractCall('cross-chain-liquidity-aggregator', 'create-pool', [
+        types.principal(deployer.address + '.mock-token-a'),
+        types.principal(deployer.address + '.mock-token-b'),
+        types.uint(500000000),
+        types.uint(1000000000),
+        types.uint(300) // 3% fee
+      ], user1.address)
+    ]);
+
+    // Perform swap to generate fees
+    block = chain.mineBlock([
+      Tx.contractCall('cross-chain-liquidity-aggregator', 'swap-tokens', [
+        types.uint(1),
+        types.principal(deployer.address + '.mock-token-a'),
+        types.principal(deployer.address + '.mock-token-b'),
+        types.uint(10000000), // 10 tokens
+        types.uint(1)
+      ], user2.address)
+    ]);
+
+    assertEquals(block.receipts.length, 1);
+    block.receipts[0].result.expectOk();
+
+    // Check pool fees
+    let poolFees = chain.callReadOnlyFn(
+      'cross-chain-liquidity-aggregator',
+      'get-pool-fees',
+      [types.uint(1)],
+      user2.address
+    );
+
+    poolFees.result.expectOk();
+    const fees = poolFees.result.expectOk().expectTuple();
+    // Should have collected fees from the swap
+
+    // Check protocol fees
+    let protocolFees = chain.callReadOnlyFn(
+      'cross-chain-liquidity-aggregator',
+      'get-protocol-fees',
+      [types.principal(deployer.address + '.mock-token-a')],
+      user2.address
+    );
+
+    protocolFees.result.expectOk();
+  }
+});

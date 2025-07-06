@@ -130,6 +130,136 @@ Returns information about a cross-chain swap operation.
 })
 ```
 
+### `get-pool-stats(pool-id: uint)` 🆕
+
+Returns comprehensive statistics for a liquidity pool.
+
+**Parameters:**
+- `pool-id`: Pool identifier
+
+**Returns:**
+```clarity
+(response {
+  pool-id: uint,
+  reserve-a: uint,
+  reserve-b: uint,
+  total-supply: uint,
+  k-value: uint,
+  price-a-in-b: uint,
+  price-b-in-a: uint,
+  utilization-rate: uint,
+  active: bool,
+  fee-rate: uint,
+  created-at: uint
+} uint)
+```
+
+### `calculate-price-impact(pool-id: uint, token-in: principal, amount-in: uint)` 🆕
+
+Calculates the price impact of a potential swap.
+
+**Parameters:**
+- `pool-id`: Pool identifier
+- `token-in`: Input token contract address
+- `amount-in`: Amount of input tokens
+
+**Returns:**
+```clarity
+(response {
+  current-price: uint,
+  new-price: uint,
+  price-impact: uint,
+  amount-out: uint
+} uint)
+```
+
+### `get-pool-health(pool-id: uint)` 🆕
+
+Returns health metrics for a liquidity pool.
+
+**Parameters:**
+- `pool-id`: Pool identifier
+
+**Returns:**
+```clarity
+(response {
+  pool-id: uint,
+  balance-ratio: uint,
+  liquidity-depth: uint,
+  is-balanced: bool,
+  min-liquidity-met: bool,
+  health-score: uint
+} uint)
+```
+
+### `get-pool-fees(pool-id: uint)` 🆕
+
+Returns fee statistics for a pool.
+
+**Parameters:**
+- `pool-id`: Pool identifier
+
+**Returns:**
+```clarity
+(response {
+  total-fees-a: uint,
+  total-fees-b: uint,
+  last-updated: uint
+} uint)
+```
+
+### `get-protocol-fees(token: principal)` 🆕
+
+Returns protocol fees collected for a specific token.
+
+**Parameters:**
+- `token`: Token contract address
+
+**Returns:**
+```clarity
+(response {
+  total-collected: uint,
+  last-updated: uint
+} uint)
+```
+
+### `get-pool-analytics(pool-id: uint)` 🆕
+
+Returns comprehensive analytics combining stats, health, and fees.
+
+**Parameters:**
+- `pool-id`: Pool identifier
+
+**Returns:**
+```clarity
+(response {
+  basic-stats: {...},
+  health-metrics: {...},
+  fee-stats: {...}
+} uint)
+```
+
+### `get-pools-range(start-id: uint, end-id: uint)` 🆕
+
+Returns basic information for multiple pools (pagination support).
+
+**Parameters:**
+- `start-id`: Starting pool ID
+- `end-id`: Ending pool ID
+
+**Returns:**
+```clarity
+(response (list 5 (optional {
+  pool-id: uint,
+  token-a: principal,
+  token-b: principal,
+  reserve-a: uint,
+  reserve-b: uint,
+  active: bool,
+  fee-rate: uint
+})) uint)
+```
+
 ## Public Functions
 
 ### `create-pool(token-a, token-b, initial-a, initial-b, fee-rate)`
@@ -219,7 +349,9 @@ Performs a token swap within a liquidity pool.
 (response {
   amount-in: uint,
   amount-out: uint,
-  protocol-fee: uint
+  protocol-fee: uint,
+  pool-fee: uint,
+  price-impact: uint
 } uint)
 ```
 
