@@ -1,0 +1,56 @@
+[project]
+name = "cross-chain-liquidity-aggregator"
+description = "A comprehensive cross-chain liquidity aggregator for Bitcoin and Stacks"
+authors = ["Abdulrazak malik <hexchange001@gmail.com>"]
+telemetry = false
+cache_dir = "./.clarinet"
+requirements = []
+boot_contracts = []
+
+[contracts.cross-chain-liquidity-aggregator]
+path = "contracts/cross-chain-liquidity-aggregator.clar"
+clarity_version = 2
+epoch = "2.4"
+
+[contracts.sip-010-trait]
+path = "contracts/traits/sip-010-trait.clar"
+clarity_version = 2
+epoch = "2.4"
+
+[contracts.mock-token-a]
+path = "contracts/test/mock-token-a.clar"
+clarity_version = 2
+epoch = "2.4"
+
+[contracts.mock-token-b]
+path = "contracts/test/mock-token-b.clar"
+clarity_version = 2
+epoch = "2.4"
+
+[repl]
+costs_version = 2
+parser_version = 2
+
+[repl.analysis]
+passes = ["check_checker"]
+
+[repl.analysis.check_checker]
+strict = false
+trusted_sender = false
+trusted_caller = false
+callee_filter = false
+
+# Network configurations
+[networks]
+testnet = "https://stacks-node-api.testnet.stacks.co"
+mainnet = "https://stacks-node-api.mainnet.stacks.co"
+
+[networks.devnet]
+host = "localhost"
+port = 20443
+deployment_fee_rate = 10
+
+# Development settings
+[development]
+enable_costs = true
+enable_coverage = true
