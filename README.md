@@ -7,6 +7,10 @@ A comprehensive DeFi protocol for cross-chain liquidity aggregation built on Sta
 - **Multi-Chain Liquidity Pools**: Create and manage liquidity pools for various token pairs
 - **Cross-Chain Swaps**: Initiate and complete token swaps across different blockchain networks
 - **Automated Market Making**: Constant product formula (x*y=k) for efficient price discovery
+- **Advanced Analytics**: Comprehensive pool statistics, health metrics, and price impact calculations
+- **Fee Tracking**: Detailed fee collection tracking for pools and protocol
+- **Pool Health Monitoring**: Real-time health scores and balance ratio monitoring
+- **Price Impact Analysis**: Calculate and display price impact before executing swaps
 - **Fee Management**: Configurable protocol fees with admin controls
 - **Security First**: Built-in access controls, slippage protection, and emergency mechanisms
 - **SIP-010 Compatible**: Full support for Stacks fungible token standard

@@ -78,6 +78,17 @@
 
 (define-data-var next-swap-id uint u1)
 
+;; Fee tracking maps
+(define-map pool-fees-collected
+  uint
+  { total-fees-a: uint, total-fees-b: uint, last-updated: uint }
+)
+
+(define-map protocol-fees-collected
+  principal
+  { total-collected: uint, last-updated: uint }
+)
+
 ;; Read-only functions
 
 ;; Get pool information by ID
@@ -135,9 +146,181 @@
   }
 )
 
+;; Get detailed pool statistics
+(define-read-only (get-pool-stats (pool-id uint))
+  (match (map-get? pools pool-id)
+    pool
+    (let
+      (
+        (reserve-a (get reserve-a pool))
+        (reserve-b (get reserve-b pool))
+        (total-supply (get total-supply pool))
+        (k-value (* reserve-a reserve-b))
+        (price-a-in-b (if (> reserve-a u0) (/ (* reserve-b PRECISION) reserve-a) u0))
+        (price-b-in-a (if (> reserve-b u0) (/ (* reserve-a PRECISION) reserve-b) u0))
+      )
+      (ok {
+        pool-id: pool-id,
+        reserve-a: reserve-a,
+        reserve-b: reserve-b,
+        total-supply: total-supply,
+        k-value: k-value,
+        price-a-in-b: price-a-in-b,
+        price-b-in-a: price-b-in-a,
+        utilization-rate: (if (> total-supply u0)
+                            (/ (* (+ reserve-a reserve-b) u100) total-supply)
+                            u0),
+        active: (get active pool),
+        fee-rate: (get fee-rate pool),
+        created-at: (get created-at pool)
+      })
+    )
+    (err ERR_POOL_NOT_FOUND)
+  )
+)
+
+;; Calculate price impact for a potential swap
+(define-read-only (calculate-price-impact (pool-id uint) (token-in principal) (amount-in uint))
+  (match (map-get? pools pool-id)
+    pool
+    (let
+      (
+        (reserve-in (if (is-eq token-in (get token-a pool))
+                       (get reserve-a pool)
+                       (get reserve-b pool)))
+        (reserve-out (if (is-eq token-in (get token-a pool))
+                        (get reserve-b pool)
+                        (get reserve-a pool)))
+        (current-price (if (> reserve-in u0) (/ (* reserve-out PRECISION) reserve-in) u0))
+        (amount-out-result (calculate-swap-output pool-id token-in amount-in))
+      )
+      (match amount-out-result
+        amount-out
+        (let
+          (
+            (new-reserve-in (+ reserve-in amount-in))
+            (new-reserve-out (- reserve-out amount-out))
+            (new-price (if (> new-reserve-in u0) (/ (* new-reserve-out PRECISION) new-reserve-in) u0))
+            (price-change (if (> current-price u0)
+                            (if (> new-price current-price)
+                              (/ (* (- new-price current-price) u10000) current-price)
+                              (/ (* (- current-price new-price) u10000) current-price))
+                            u0))
+          )
+          (ok {
+            current-price: current-price,
+            new-price: new-price,
+            price-impact: price-change,
+            amount-out: amount-out
+          })
+        )
+        error-code (err error-code)
+      )
+    )
+    (err ERR_POOL_NOT_FOUND)
+  )
+)
+
+;; Get pool health metrics
+(define-read-only (get-pool-health (pool-id uint))
+  (match (map-get? pools pool-id)
+    pool
+    (let
+      (
+        (reserve-a (get reserve-a pool))
+        (reserve-b (get reserve-b pool))
+        (total-supply (get total-supply pool))
+        (min-reserve (min reserve-a reserve-b))
+        (max-reserve (max reserve-a reserve-b))
+        (balance-ratio (if (> min-reserve u0) (/ (* max-reserve u100) min-reserve) u0))
+        (liquidity-depth (+ reserve-a reserve-b))
+      )
+      (ok {
+        pool-id: pool-id,
+        balance-ratio: balance-ratio,
+        liquidity-depth: liquidity-depth,
+        is-balanced: (< balance-ratio u200), ;; Less than 2:1 ratio
+        min-liquidity-met: (>= total-supply MIN_LIQUIDITY),
+        health-score: (if (and (< balance-ratio u200) (>= total-supply MIN_LIQUIDITY))
+                        u100 ;; Healthy
+                        (if (< balance-ratio u500) u50 u10)) ;; Moderate or Poor
+      })
+    )
+    (err ERR_POOL_NOT_FOUND)
+  )
+)
+
 ;; Get cross-chain swap information
 (define-read-only (get-cross-chain-swap (swap-id uint))
   (map-get? cross-chain-swaps swap-id)
+)
+
+;; Get fee statistics for a pool
+(define-read-only (get-pool-fees (pool-id uint))
+  (match (map-get? pool-fees-collected pool-id)
+    fees (ok fees)
+    (ok { total-fees-a: u0, total-fees-b: u0, last-updated: u0 })
+  )
+)
+
+;; Get protocol fees collected for a token
+(define-read-only (get-protocol-fees (token principal))
+  (match (map-get? protocol-fees-collected token)
+    fees (ok fees)
+    (ok { total-collected: u0, last-updated: u0 })
+  )
+)
+
+;; Get comprehensive pool analytics
+(define-read-only (get-pool-analytics (pool-id uint))
+  (match (get-pool-stats pool-id)
+    stats
+    (match (get-pool-health pool-id)
+      health
+      (match (get-pool-fees pool-id)
+        fees
+        (ok {
+          basic-stats: stats,
+          health-metrics: health,
+          fee-stats: fees
+        })
+        error (err error)
+      )
+      error (err error)
+    )
+    error (err error)
+  )
+)
+
+;; Get multiple pools with basic info (for pagination)
+(define-read-only (get-pools-range (start-id uint) (end-id uint))
+  (let
+    (
+      (max-id (- (var-get next-pool-id) u1))
+      (actual-end (min end-id max-id))
+    )
+    (if (and (<= start-id actual-end) (> actual-end u0))
+      (ok (map get-pool-basic (list start-id (+ start-id u1) (+ start-id u2) (+ start-id u3) (+ start-id u4))))
+      (ok (list))
+    )
+  )
+)
+
+;; Helper function to get basic pool info
+(define-private (get-pool-basic (pool-id uint))
+  (match (map-get? pools pool-id)
+    pool
+    (some {
+      pool-id: pool-id,
+      token-a: (get token-a pool),
+      token-b: (get token-b pool),
+      reserve-a: (get reserve-a pool),
+      reserve-b: (get reserve-b pool),
+      active: (get active pool),
+      fee-rate: (get fee-rate pool)
+    })
+    none
+  )
 )
 
 ;; Private functions
@@ -387,7 +570,47 @@
       ;; Transfer output tokens to user
       (try! (as-contract (contract-call? token-out transfer amount-out tx-sender tx-sender none)))
 
-      (ok { amount-in: amount-in, amount-out: amount-out, protocol-fee: protocol-fee-amount })
+      ;; Update fee tracking
+      (let
+        (
+          (current-pool-fees (default-to { total-fees-a: u0, total-fees-b: u0, last-updated: u0 }
+                                         (map-get? pool-fees-collected pool-id)))
+          (pool-fee-amount (/ (* amount-in (get fee-rate pool)) u10000))
+        )
+        (map-set pool-fees-collected pool-id
+          {
+            total-fees-a: (if is-a-to-b
+                            (+ (get total-fees-a current-pool-fees) pool-fee-amount)
+                            (get total-fees-a current-pool-fees)),
+            total-fees-b: (if is-a-to-b
+                            (get total-fees-b current-pool-fees)
+                            (+ (get total-fees-b current-pool-fees) pool-fee-amount)),
+            last-updated: block-height
+          }
+        )
+
+        ;; Update protocol fee tracking
+        (let
+          (
+            (current-protocol-fees (default-to { total-collected: u0, last-updated: u0 }
+                                              (map-get? protocol-fees-collected token-in-principal)))
+          )
+          (map-set protocol-fees-collected token-in-principal
+            {
+              total-collected: (+ (get total-collected current-protocol-fees) protocol-fee-amount),
+              last-updated: block-height
+            }
+          )
+        )
+      )
+
+      (ok {
+        amount-in: amount-in,
+        amount-out: amount-out,
+        protocol-fee: protocol-fee-amount,
+        pool-fee: (/ (* amount-in (get fee-rate pool)) u10000),
+        price-impact: (unwrap-panic (get price-impact (unwrap-panic (calculate-price-impact pool-id token-in-principal amount-in))))
+      })
     )
   )
 )

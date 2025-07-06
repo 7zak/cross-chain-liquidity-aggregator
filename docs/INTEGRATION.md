@@ -123,7 +123,7 @@ async function swapTokens(senderKey, poolId, tokenIn, tokenOut, amountIn, minAmo
 ```jsx
 import React, { useState, useEffect } from 'react';
 import { useConnect } from '@stacks/connect-react';
-import { 
+import {
   callReadOnlyFunction,
   cvToJSON,
   uintCV,
@@ -228,6 +228,115 @@ const LiquidityPool = ({ poolId }) => {
 };
 
 export default LiquidityPool;
+
+// Enhanced Pool Analytics Component
+const PoolAnalytics = ({ poolId }) => {
+  const [analytics, setAnalytics] = useState(null);
+  const [priceImpact, setPriceImpact] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAnalytics = async () => {
+      try {
+        // Get comprehensive pool analytics
+        const analyticsResult = await callReadOnlyFunction({
+          contractAddress: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM',
+          contractName: 'cross-chain-liquidity-aggregator',
+          functionName: 'get-pool-analytics',
+          functionArgs: [uintCV(poolId)],
+          network: new StacksTestnet(),
+          senderAddress: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM'
+        });
+
+        const data = cvToJSON(analyticsResult);
+        setAnalytics(data.value);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching analytics:', error);
+        setLoading(false);
+      }
+    };
+
+    fetchAnalytics();
+  }, [poolId]);
+
+  const calculatePriceImpact = async (tokenIn, amountIn) => {
+    try {
+      const result = await callReadOnlyFunction({
+        contractAddress: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM',
+        contractName: 'cross-chain-liquidity-aggregator',
+        functionName: 'calculate-price-impact',
+        functionArgs: [
+          uintCV(poolId),
+          standardPrincipalCV(tokenIn),
+          uintCV(amountIn)
+        ],
+        network: new StacksTestnet(),
+        senderAddress: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM'
+      });
+
+      const impact = cvToJSON(result);
+      setPriceImpact(impact.value);
+    } catch (error) {
+      console.error('Error calculating price impact:', error);
+    }
+  };
+
+  if (loading) return <div>Loading analytics...</div>;
+  if (!analytics) return <div>Analytics not available</div>;
+
+  const { 'basic-stats': stats, 'health-metrics': health, 'fee-stats': fees } = analytics;
+
+  return (
+    <div className="pool-analytics">
+      <h3>Pool #{poolId} Analytics</h3>
+
+      <div className="stats-grid">
+        <div className="stat-card">
+          <h4>Basic Statistics</h4>
+          <p>TVL: {(stats['reserve-a'].value + stats['reserve-b'].value).toLocaleString()}</p>
+          <p>K-Value: {stats['k-value'].value.toLocaleString()}</p>
+          <p>Utilization: {stats['utilization-rate'].value}%</p>
+        </div>
+
+        <div className="stat-card">
+          <h4>Health Metrics</h4>
+          <p>Balance Ratio: {health['balance-ratio'].value / 100}:1</p>
+          <p>Health Score: {health['health-score'].value}/100</p>
+          <p>Status: {health['is-balanced'].value ? '✅ Balanced' : '⚠️ Imbalanced'}</p>
+        </div>
+
+        <div className="stat-card">
+          <h4>Fee Statistics</h4>
+          <p>Total Fees A: {fees['total-fees-a'].value.toLocaleString()}</p>
+          <p>Total Fees B: {fees['total-fees-b'].value.toLocaleString()}</p>
+          <p>Last Updated: Block #{fees['last-updated'].value}</p>
+        </div>
+      </div>
+
+      <div className="price-impact-calculator">
+        <h4>Price Impact Calculator</h4>
+        <input
+          type="number"
+          placeholder="Amount to swap"
+          onChange={(e) => {
+            if (e.target.value && stats) {
+              calculatePriceImpact(stats['token-a'].value, parseInt(e.target.value));
+            }
+          }}
+        />
+        {priceImpact && (
+          <div className="impact-result">
+            <p>Price Impact: {(priceImpact['price-impact'].value / 100).toFixed(2)}%</p>
+            <p>Expected Output: {priceImpact['amount-out'].value.toLocaleString()}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export { PoolAnalytics };
 ```
 
 ### Swap Interface Component
